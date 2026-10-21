@@ -37,7 +37,10 @@ export function feeForMember(principalUnits) {
 // the operator keeps the rest, including dividend rounding remainders.
 //
 // Each member's gross share is floored pro-rata; their fee is floored from
-// their own tier rate; net = gross - fee. Conservation always holds:
+// their own tier rate; net = gross - fee. Staker dividends are a REDISTRIBUTION
+// of collected fees: a non-staker never loses more than their own fee
+// (net >= gross - own fee), the staker dividend pool never exceeds
+// stakerShareBps of feeTotal, and conservation always holds:
 // sum(net) + sum(dividends) + operatorFee + dust == amountUnits.
 // Dust (gross rounding) stays in the pool. With no stakerOpts the result
 // is the legacy split (operatorFee == totalFee, no dividends).

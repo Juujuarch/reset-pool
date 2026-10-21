@@ -72,13 +72,14 @@ The contract is intentionally narrow: parameters are written once at `pool_init`
 
 ## Fixes applied during this review
 
-Earlier passes surfaced five gaps that were closed before launch:
+Earlier passes surfaced six gaps that were closed before launch:
 
 1. **Rounding dust was unreachable.** Integer remainders accumulated in a counter no operation could move. Added a bounded operator sweep for dust only — fees remain untouchable from it.
 2. **Exit had no floor.** A member could create unlimited one-unit exit records and bloat replicated state. Exit now enforces the same 0.001 minimum as a deposit.
 3. **Init accepted degenerate configuration.** The pool wallet and fee receiver are now required to differ; a fee receiver equal to the pool wallet would mix member principal with operator fees.
 4. **No solvency check.** Added a read-only operation comparing principal owed, earnings owed, unswept fees and dust against the on-chain balance. It never moves funds.
 5. **Redeposit during a pending exit was allowed.** The ledger could count new money while old money was still queued out. Deposits are now refused while an exit is pending, and accepted again once it settles.
+6. **Deep simulation re-audit (v6):** a 1000-case randomized sweep with mixed staker flags surfaced a dividend semantics question — whether a staker's `net + dividend` may exceed their pro-rata gross. Resolution: staker dividends are a **redistribution of collected fees**, so the binding invariants are (a) a non-staker never loses more than their own fee, (b) the dividend pool never exceeds `stakerShareBps` of `feeTotal`, (c) exact conservation. An initial stricter cap (`net + dividend <= gross`) was evaluated and rejected — it zeroes out staker dividends entirely, since stakers pay 0% fee and have zero headroom. The fee-redistribution semantics is the economically correct one and is now documented in `split.mjs` and enforced by the test suite.
 
 ---
 
@@ -115,7 +116,7 @@ The pool wallet's keystore and password live on the operator's host with restric
 ```
 4d3c316d090852bd63b856d56204013b  contract/contract.js
 fd12e721351cddad91d77aee3728d1e1  contract/protocol.js
-218cc2c614b13cbd11d5e973258c75bc  contract/split.mjs
+a2215a1bc5fc1b3f88a598aafb3271cc  contract/split.mjs
 ```
 
 Re-run both suites after any contract change:

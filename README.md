@@ -153,7 +153,7 @@ Expected for this release:
 ```
 4d3c316d090852bd63b856d56204013b  contract/contract.js
 fd12e721351cddad91d77aee3728d1e1  contract/protocol.js
-218cc2c614b13cbd11d5e973258c75bc  contract/split.mjs
+a2215a1bc5fc1b3f88a598aafb3271cc  contract/split.mjs
 ```
 
 If any hash differs, stop. Re-copy from this repository before joining or continuing on the subnet.
