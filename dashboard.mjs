@@ -145,7 +145,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
 </style></head><body>
 <header>
   <div class="brand"><img src="/assets/trac-favicon.png" alt="">RESET Pool <small>· poolreset.bond</small></div>
-  <nav><a href="${REPO}">Source</a><a href="${REPO}/blob/main/TUTORIAL.md">Guide</a></nav>
+  <nav><a href="${REPO}">Source</a><a href="/about">About</a><a href="${REPO}/blob/main/TUTORIAL.md">Guide</a></nav>
 </header>
 
 <h2>Pool status</h2>
@@ -198,10 +198,15 @@ ${calcSection(c, L)}
 }
 
 const FAVICON = fs.readFileSync(path.join(__dirname, 'assets', 'trac-favicon.png'));
+const ABOUT = fs.readFileSync(path.join(__dirname, 'about.html'));
 const server = http.createServer(async (req, res) => {
   if (req.url === '/assets/trac-favicon.png') {
     res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
     return res.end(FAVICON);
+  }
+  if (req.url === '/about') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(ABOUT);
   }
   if (req.url === '/api/state') {
     const d = await collect();

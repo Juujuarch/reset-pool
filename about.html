@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>About — RESET Pool</title>
+<link rel="icon" type="image/png" href="/assets/trac-favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+ --bg:#0e1416; --bg2:#121a1d; --panel:#131a1d; --line:#21292d;
+ --txt:#e9e9eb; --txt2:#8b939f; --txt3:#5a626d;
+ --red:#ea5b64; --red2:#ff8a91; --ok:#6fcf97;
+ --mono:'JetBrains Mono',monospace; --ui:'Inter',sans-serif; --serif:'Instrument Serif',serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--txt);font-family:var(--ui);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+.glow{position:fixed;border-radius:50%;filter:blur(120px);pointer-events:none;z-index:0}
+.g1{width:520px;height:520px;background:rgba(234,91,100,.08);top:-180px;left:-120px}
+.g2{width:460px;height:460px;background:rgba(234,91,100,.05);bottom:-200px;right:-140px}
+
+.wrap{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:0 28px}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(20px);background:rgba(14,20,22,.72);border-bottom:1px solid var(--line)}
+.nav-in{max-width:1080px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:-.2px}
+.logo img{width:20px;height:20px}
+.navlinks{display:flex;gap:26px;font-size:12.5px;color:var(--txt2);align-items:center}
+.navlinks a{color:inherit;text-decoration:none;transition:.2s}
+.navlinks a:hover{color:var(--red2)}
+.nav-cta{border:1px solid rgba(234,91,100,.35);border-radius:6px;padding:6px 13px;color:var(--red2) !important;
+ font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.02em;transition:.18s}
+.nav-cta:hover{background:rgba(234,91,100,.1);border-color:var(--red);transform:translateY(-1px)}
+
+.hero{padding:170px 0 100px;position:relative}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--red2);margin-bottom:26px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:'';width:28px;height:1px;background:var(--red)}
+h1{font-family:var(--serif);font-size:clamp(46px,7vw,82px);line-height:1.02;font-weight:400;letter-spacing:-.025em;margin-bottom:28px}
+h1 em{font-style:italic;color:var(--red2)}
+.lede{font-size:17px;line-height:1.78;color:var(--txt2);max-width:640px;font-weight:300}
+.lede strong{color:var(--txt);font-weight:500}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-top:64px}
+.stat{background:var(--bg2);padding:26px 22px;transition:.25s}
+.stat:hover{background:var(--panel)}
+.sv{font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.03em;color:var(--red2)}
+.sl{font-size:10.5px;color:var(--txt3);text-transform:uppercase;letter-spacing:.1em;margin-top:7px}
+
+section{padding:96px 0;border-top:1px solid var(--line)}
+.sh{display:flex;align-items:baseline;gap:16px;margin-bottom:44px}
+.sn{font-family:var(--mono);font-size:11px;color:var(--txt3)}
+h2{font-family:var(--serif);font-size:clamp(30px,4vw,44px);font-weight:400;letter-spacing:-.02em}
+h2 em{font-style:italic;color:var(--red2)}
+
+.prose{max-width:660px;font-size:15.5px;line-height:1.85;color:var(--txt2);font-weight:300}
+.prose p{margin-bottom:20px}
+.prose strong{color:var(--txt);font-weight:500}
+.prose code{font-family:var(--mono);font-size:13px;color:var(--red2);background:rgba(234,91,100,.08);padding:2px 7px;border-radius:5px}
+
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:26px 22px;transition:.25s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(234,91,100,.4),transparent);opacity:0;transition:.3s}
+.card:hover{border-color:#2a3238;transform:translateY(-2px)}
+.card:hover::before{opacity:1}
+.ci{width:34px;height:34px;border-radius:9px;background:rgba(234,91,100,.08);border:1px solid rgba(234,91,100,.18);display:flex;align-items:center;justify-content:center;margin-bottom:18px;font-family:var(--mono);font-size:13px;color:var(--red2)}
+.ct{font-size:15px;font-weight:600;margin-bottom:9px;letter-spacing:-.01em}
+.cd{font-size:13px;line-height:1.7;color:var(--txt2);font-weight:300}
+
+.tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.tbl th{text-align:left;padding:11px 14px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt3);border-bottom:1px solid var(--line);font-weight:500}
+.tbl td{padding:13px 14px;border-bottom:1px solid rgba(33,41,45,.6);font-family:var(--mono);font-size:12.5px}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover{background:rgba(255,255,255,.015)}
+.tbl .n{color:var(--txt);font-weight:500}
+.pos{color:var(--ok)}
+.mut{color:var(--txt3)}
+
+.quote{border-left:2px solid var(--red);padding:6px 0 6px 30px;margin:48px 0;font-family:var(--serif);font-size:clamp(22px,3vw,30px);line-height:1.45;font-style:italic;color:var(--txt);letter-spacing:-.01em;max-width:720px}
+.quote span{display:block;font-family:var(--ui);font-size:12px;font-style:normal;color:var(--txt3);margin-top:20px;letter-spacing:.06em;text-transform:uppercase}
+
+.stack{display:flex;flex-wrap:wrap;gap:9px;margin-top:26px}
+.chip{font-family:var(--mono);font-size:11.5px;padding:7px 13px;border:1px solid var(--line);border-radius:6px;color:var(--txt2);background:var(--bg2);transition:.2s}
+.chip:hover{border-color:rgba(234,91,100,.3);color:var(--red2)}
+
+.contact{text-align:center;padding:110px 0}
+.contact h2{margin-bottom:18px}
+.contact p{color:var(--txt2);font-size:15px;margin-bottom:36px;font-weight:300}
+.btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{padding:13px 28px;border-radius:8px;font-size:13.5px;font-weight:500;text-decoration:none;transition:.22s;border:1px solid transparent;display:inline-flex;align-items:center;gap:9px}
+.btn1{background:var(--red);color:#1c0406}
+.btn1:hover{background:var(--red2);transform:translateY(-1px)}
+.btn2{border-color:var(--line);color:var(--txt2)}
+.btn2:hover{border-color:var(--red);color:var(--red2)}
+.btn svg{width:15px;height:15px;fill:currentColor}
+
+footer{border-top:1px solid var(--line);padding:34px 0;text-align:center;font-size:11.5px;color:var(--txt3);font-family:var(--mono)}
+.disclaimer{max-width:640px;margin:22px auto 0;font-family:var(--ui);font-size:11px;line-height:1.7;color:var(--txt3);text-align:center}
+
+@media(max-width:860px){
+ .stats{grid-template-columns:repeat(2,1fr)}
+ .grid3{grid-template-columns:1fr}
+ .navlinks{display:none}
+ .hero{padding:130px 0 70px}
+}
+</style>
+</head>
+<body>
+<div class="glow g1"></div><div class="glow g2"></div>
+
+<nav><div class="nav-in">
+  <div class="logo"><img src="/assets/trac-favicon.png" alt="">RESET POOL</div>
+  <div class="navlinks">
+    <a href="#problem">Problem</a>
+    <a href="#how">How it works</a>
+    <a href="#trust">Trust &amp; Safety</a>
+    <a href="#economics">Economics</a>
+    <a href="#stack">Stack</a>
+    <a href="/api/state" class="nav-cta">Live Data →</a>
+  </div>
+</div></nav>
+
+<div class="wrap">
+
+<div class="hero">
+  <div class="eyebrow">Fair-Share Mining Pool · Trac Network</div>
+  <h1>Mine together,<br>trust <em>nothing.</em></h1>
+  <p class="lede">
+    RESET requires a 0.1 RESET deposit before the Mine accepts your claim — below that,
+    you earn nothing. This pool aggregates small deposits behind one operator wallet and
+    splits every round by exact pro-rata math, replicated to every member's peer.
+    <strong>Fees apply once, to earnings only. Principal returns whole. The ledger lies to no one.</strong>
+  </p>
+
+  <div class="stats">
+    <div class="stat"><div class="sv">0.001</div><div class="sl">Min Deposit (RESET)</div></div>
+    <div class="stat"><div class="sv">10/5/2/0%</div><div class="sl">Fee Tiers — Earnings Only</div></div>
+    <div class="stat"><div class="sv">64→80</div><div class="sl">Adversarial Audit Checks</div></div>
+    <div class="stat"><div class="sv">100%</div><div class="sl">Principal Returned</div></div>
+  </div>
+</div>
+
+<section id="problem">
+  <div class="sh"><span class="sn">01</span><h2>The <em>problem</em></h2></div>
+  <div class="prose">
+    <p>RESET mining has a hard floor: a wallet must lock <strong>0.1 RESET</strong> before the Mine
+    accepts a claim. Below that, the protocol rejects the claim entirely — no partial payout, nothing.
+    The floor exists to keep dust wallets from crowding the claim lanes, and it works.</p>
+    <p>But it also means someone holding 0.02 RESET cannot mine at all. Selling that position to
+    reach 0.1 defeats the purpose of holding it. This pool fixes the access problem without
+    touching the protocol's rules.</p>
+  </div>
+
+  <div class="quote">
+    Pooling buys access, never extra yield. Anyone claiming otherwise is selling you something.
+    <span>Design principle</span>
+  </div>
+
+  <div class="prose">
+    <p>The Mine's fair share is <strong>strictly linear in deposit</strong>. Thirty people pooling 0.1
+    earn exactly what one person with 0.1 earns. This pool makes no claim to the contrary —
+    its value is <strong>access, automation, and auditability</strong>, never inflated yield.</p>
+  </div>
+</section>
+
+<section id="how">
+  <div class="sh"><span class="sn">02</span><h2>How it <em>works</em></h2></div>
+  <div class="prose">
+    <p>A member registers their RESET address and proves ownership by signing a challenge with their
+    wallet key. They deposit to the pool wallet; the operator verifies the transfer on-chain and
+    credits their principal in the ledger. The operator then locks the combined pool into the Mine
+    and claims every round at <code>level 1000</code> — exactly the fair share, never more, so the
+    pool never accrues strikes or penalties.</p>
+    <p>When a round settles, the payout is split <strong>pro-rata by principal snapshot</strong> taken
+    at claim time. Integer arithmetic only. The rounding remainder is tracked in a dedicated dust
+    counter and never silently absorbed. Conservation is enforced by construction:
+    every unit of a round's payout lands as member net, fee, or dust.</p>
+  </div>
+
+  <div class="grid3" style="margin-top:44px">
+    <div class="card">
+      <div class="ci">⏱</div>
+      <div class="ct">Auto-Stake — Your Choice</div>
+      <div class="cd">Each member owns an autoStake flag. ON: earnings compound into
+      your principal automatically every round. OFF: earnings accumulate as a withdrawable
+      balance. Toggle any time, effective next settle. The operator cannot set it for you.</div>
+    </div>
+    <div class="card">
+      <div class="ci">⭐</div>
+      <div class="ct">Stakers</div>
+      <div class="cd">Whitelisted capital providers with ≥ 0.5 RESET principal pay 0% fee
+      on their own earnings and receive 50% of the round's collected fees, split pro-rata.
+      Below 0.5 RESET, a flagged member is an ordinary member that round.</div>
+    </div>
+    <div class="card">
+      <div class="ci">⏳</div>
+      <div class="ct">Exits</div>
+      <div class="cd">Earnings withdraw at ≥ 0.01 RESET — no lock. Principal exits follow the
+      protocol's own schedule: unlock, 144 counted blocks (~24 h), then withdraw. Exits are
+      batched by the operator to minimize network fees.</div>
+    </div>
+  </div>
+</section>
+
+<section id="trust">
+  <div class="sh"><span class="sn">03</span><h2>Trust &amp; <em>safety</em></h2></div>
+
+  <div class="quote">
+    The contract is the ledger. The operator runs the loop. Only one of them can steal.
+    <span>Custody model, stated plainly</span>
+  </div>
+
+  <div class="prose">
+    <p><strong>Every parameter is written once at <code>pool_init</code> and nothing can change it.</strong>
+    Fee tiers, minimums, staker share — all frozen. The only setter ops are
+    <code>set_staker</code> (operator whitelist), <code>set_fee_receivers</code> (once, then locked
+    forever), and <code>set_auto_stake</code> (each member, own record only).</p>
+    <p><strong>Deposits are idempotent</strong> by transfer reference. A round cannot be
+    double-settled. A sweep cannot exceed what has actually accrued. Principal and earnings can
+    only move to their owner. Every rejected operation leaves the ledger state byte-identical —
+    verified by an adversarial harness driving the real contract sources.</p>
+    <p><strong>Every member holds a replicated copy of the ledger.</strong> The pool wallet address
+    is public and its balance is readable from the gateway by anyone. A read-only solvency check
+    compares what the contract owes against what the wallet actually holds. If those numbers
+    ever diverge, every member sees it at once.</p>
+    <p><strong>The honest boundary:</strong> RESET has no multisig. The operator holds the pool
+    wallet keys and signs real transfers. A dishonest operator is <strong>detectable and
+    attributable — not prevented.</strong> That is the accurate description of the trust model.
+    Start with an amount you would not mind losing, and reconcile the ledger yourself.</p>
+  </div>
+
+  <div class="stack" style="margin-top:34px">
+    <span class="chip">80 adversarial checks</span>
+    <span class="chip">17 unit tests + 500-case property sweep</span>
+    <span class="chip">1000-case randomized simulation</span>
+    <span class="chip">Exact conservation enforced</span>
+    <span class="chip">Immutable parameters</span>
+    <span class="chip">Idempotent deposits</span>
+    <span class="chip">Replicated ledger</span>
+    <span class="chip">Public solvency check</span>
+  </div>
+</section>
+
+<section id="economics">
+  <div class="sh"><span class="sn">04</span><h2>Economics &amp; <em>fees</em></h2></div>
+  <div class="prose" style="margin-bottom:34px">
+    <p>Fees apply to <strong>earnings only — never to principal</strong>. The rate depends on your
+    own deposit size, not the pool total. Withdrawals are free of pool fees; the only cost is
+    the network's TNK transaction fee.</p>
+  </div>
+
+  <table class="tbl">
+    <thead><tr>
+      <th>Your Principal</th><th>Fee on Earnings</th><th>Example at 1 RESET = $300</th>
+    </tr></thead>
+    <tbody>
+      <tr><td class="n">below 1 RESET</td><td class="mut">10%</td><td class="mut">deposits under $300</td></tr>
+      <tr><td class="n">1 – 5 RESET</td><td class="mut">5%</td><td class="mut">$300 – $1,500</td></tr>
+      <tr><td class="n">5 – 20 RESET</td><td class="mut">2%</td><td class="mut">$1,500 – $6,000</td></tr>
+      <tr><td class="n">≥ 20 RESET</td><td class="pos">0%</td><td class="mut">$6,000 and above</td></tr>
+      <tr><td class="n">⭐ Staker (whitelisted, ≥ 0.5)</td><td class="pos">0% + 50% fee share</td><td class="mut">by invitation</td></tr>
+    </tbody>
+  </table>
+
+  <div class="stats" style="margin-top:36px">
+    <div class="stat"><div class="sv">0.001</div><div class="sl">Min Deposit (RESET)</div></div>
+    <div class="stat"><div class="sv">0.01</div><div class="sl">Min Payout (RESET)</div></div>
+    <div class="stat"><div class="sv">~0.15</div><div class="sl">TNK to Join (network fee)</div></div>
+    <div class="stat"><div class="sv">0%</div><div class="sl">Fee on Principal</div></div>
+  </div>
+
+  <div class="prose" style="margin-top:36px">
+    <p><strong>What happens on exit:</strong> request the exit, the operator unlocks your share
+    from the Mine, the protocol holds it for 144 counted blocks (~24 hours), then the principal
+    arrives at your wallet whole — the same size it went in. Earnings withdrawals have no lock.</p>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="sh"><span class="sn">05</span><h2>Built with</h2></div>
+  <div class="prose">
+    <p>The contract runs on <strong>Intercom</strong>, Trac Network's peer-to-peer replicated
+    state layer — every member's peer executes the same contract code and holds the same ledger.
+    The operator's claim loop is data-driven: it derives every lock, unlock, and payout decision
+    from ledger state, never from fixed assumptions. Specified in
+    <a href="https://github.com/Juujuarch/reset-pool/blob/main/CLAIM-LOOP.md" style="color:var(--red2)">CLAIM-LOOP.md</a>.</p>
+  </div>
+  <div class="stack">
+    <span class="chip">Trac Network / RESET</span>
+    <span class="chip">Intercom (trac-peer)</span>
+    <span class="chip">Node.js 22</span>
+    <span class="chip">Adversarial harness (80 checks)</span>
+    <span class="chip">Property-based settlement sweep</span>
+    <span class="chip">Immutable pool parameters</span>
+    <span class="chip">Per-member auto-stake</span>
+    <span class="chip">Fee split — up to 4 receivers</span>
+    <span class="chip">Data-derived claim loop</span>
+    <span class="chip">Replicated ledger</span>
+    <span class="chip">systemd</span>
+  </div>
+</section>
+
+<section id="join" class="contact" style="border-top:1px solid var(--line)">
+  <div class="eyebrow" style="justify-content:center">Get started</div>
+  <h2>Join the <em>pool</em></h2>
+  <p>A RESET wallet, 0.001 RESET minimum, and ~0.15 TNK for network fees.<br>
+  Your agent handles registration, ownership proof, and deposit from one prompt.</p>
+  <div class="btns">
+    <a class="btn btn1" href="https://github.com/Juujuarch/reset-pool" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2 0 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6.1-3.2 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.3 2.8.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.9 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+      Source &amp; Guide
+    </a>
+    <a class="btn btn2" href="/">Live Dashboard</a>
+  </div>
+</section>
+
+<footer>
+  RESET POOL — poolreset.bond · INDEPENDENT POOL, NOT AFFILIATED WITH TRAC SYSTEMS
+  <div class="disclaimer">
+    This pool is custodial by design: the operator holds the pool wallet keys. The ledger makes
+    dishonesty detectable and attributable, not impossible. Deposit only what you would not mind
+    losing, and reconcile the replicated ledger yourself.
+  </div>
+</footer>
+
+</div>
+</body>
+</html>
