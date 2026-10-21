@@ -145,7 +145,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
 </style></head><body>
 <header>
   <div class="brand"><img src="/assets/trac-favicon.png" alt="">RESET Pool <small>· poolreset.bond</small></div>
-  <nav><a href="${REPO}">Source</a><a href="/about">About</a><a href="${REPO}/blob/main/TUTORIAL.md">Guide</a></nav>
+  <nav><a href="https://github.com/Juujuarch/reset-pool">Source</a><a href="${REPO}/blob/main/TUTORIAL.md">Guide</a><a href="/dashboard" class="nav-cta">Dashboard →</a></nav>
 </header>
 
 <h2>Pool status</h2>
@@ -198,17 +198,13 @@ ${calcSection(c, L)}
 }
 
 const FAVICON = fs.readFileSync(path.join(__dirname, 'assets', 'trac-favicon.png'));
-const ABOUT = fs.readFileSync(path.join(__dirname, 'about.html'));
+const HOME = fs.readFileSync(path.join(__dirname, 'about.html'));
 const server = http.createServer(async (req, res) => {
   if (req.url === '/assets/trac-favicon.png') {
     res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
     return res.end(FAVICON);
   }
-  if (req.url === '/about' || req.url === '/home') {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(ABOUT);
-  }
-  if (req.url === '/dashboard' || req.url === '/') {
+  if (req.url === '/dashboard' || req.url === '/about' || req.url === '/home') {
     const d = await collect();
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(page(d));
@@ -218,10 +214,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify(d, (k, v) => typeof v === 'bigint' ? String(v) : v));
   }
-  // '/' and '/dashboard' render the live dashboard; '/about' is the editorial home.
-  const d = await collect();
+  // '/' renders the editorial about page as the home. '/dashboard' shows live data.
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-  res.end(page(d));
+  res.end(HOME);
 });
 
 server.listen(PORT, HOST, () => console.log(`[pool-dash] on http://${HOST}:${PORT}`));
