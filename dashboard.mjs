@@ -130,7 +130,7 @@ footer{margin-top:28px;color:var(--dim);font-size:11px;text-align:center}
 <h2>Ledger</h2>
 ${renderLedger(d.ledger)}
 ${d.errors.length ? `<div class="err">${d.errors.map(e=>'· '+e).join('<br>')}</div>` : ''}
-<footer>ledger: <code>${path.basename(LEDGER_FILE)}</code> · updated ${d.ts} WIB-ish (server UTC) · bukan site resmi RESET — pool independen</footer>
+<footer>ledger: <code>${path.basename(LEDGER_FILE)}</code> · updated ${d.ts} WIB-ish (server UTC) · repo: <a style="color:var(--acc)" href="https://github.com/Juujuarch/reset-pool">github.com/Juujuarch/reset-pool</a> · pool independen, bukan site resmi RESET</footer>
 <script>setTimeout(()=>location.reload(),60000)</script>
 </body></html>`;
 }
