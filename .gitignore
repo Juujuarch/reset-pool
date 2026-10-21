@@ -3,3 +3,5 @@ stores/
 store/
 *.log
 .DS_Store
+
+WALLET-REGISTRY.md
