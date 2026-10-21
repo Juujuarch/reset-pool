@@ -34,7 +34,7 @@ node tests/audit.mjs
 
 | Category | Attempts |
 |---|---|
-| **Privilege** | Non-operator calling `pool_init`, `deposit_credit`, `round_snapshot`, `round_settle`, `set_staker`, `set_fee_receivers`, `fee_sweep`, `dust_sweep`, `payout_paid`, `payout_cancel`, `exit_paid` |
+| **Privilege** | Non-operator calling `pool_init`, `deposit_credit`, `round_snapshot`, `round_settle`, `set_staker`, `set_auto_stake`, `set_fee_receivers`, `fee_sweep`, `dust_sweep`, `payout_paid`, `payout_cancel`, `exit_paid` |
 | **Replay** | Second `pool_init`; double credit of one transfer reference; double snapshot; double settle; double sweep of one reference |
 | **Member overreach** | Payout below the floor; payout above own earnings; payout against another member's record; exit above own principal; exit below the minimum; self-appointment as staker |
 | **Operator overreach** | Settle a round never snapshotted; credit an unregistered member; credit below the minimum; staker flag on an unregistered address; sweep above accrued fees; dust sweep above accumulated dust; receiver split not summing to 10000 bps; duplicate receiver addresses; a receiver equal to the pool wallet |
@@ -80,6 +80,7 @@ Earlier passes surfaced six gaps that were closed before launch:
 4. **No solvency check.** Added a read-only operation comparing principal owed, earnings owed, unswept fees and dust against the on-chain balance. It never moves funds.
 5. **Redeposit during a pending exit was allowed.** The ledger could count new money while old money was still queued out. Deposits are now refused while an exit is pending, and accepted again once it settles.
 6. **Deep simulation re-audit (v6):** a 1000-case randomized sweep with mixed staker flags surfaced a dividend semantics question — whether a staker's `net + dividend` may exceed their pro-rata gross. Resolution: staker dividends are a **redistribution of collected fees**, so the binding invariants are (a) a non-staker never loses more than their own fee, (b) the dividend pool never exceeds `stakerShareBps` of `feeTotal`, (c) exact conservation. An initial stricter cap (`net + dividend <= gross`) was evaluated and rejected — it zeroes out staker dividends entirely, since stakers pay 0% fee and have zero headroom. The fee-redistribution semantics is the economically correct one and is now documented in `split.mjs` and enforced by the test suite.
+7. **Auto-stake feature + stub fidelity fix (v6.1):** added a member-owned `autoStake` preference (`set_auto_stake`, peer-bound, toggleable any time, effective next settle) — compounding members earn into `principal`, others into `earnings`, with compounding refused while an exit is pending. The first audit run failed its own compound check and exposed that the **test stub returned live object references** instead of fresh copies, letting in-place mutation leak past the storage boundary — unfaithful to trac-peer, where `get` deserializes. The stub now deep-copies on `get`/`put`; the contract logic itself required no change. Audit grew to 80 checks.
 
 ---
 
@@ -114,7 +115,7 @@ The pool wallet's keystore and password live on the operator's host with restric
 ## Release hashes
 
 ```
-4d3c316d090852bd63b856d56204013b  contract/contract.js
+fe06ee601c2eb7a5e1e015ee35ad9c04  contract/contract.js
 fd12e721351cddad91d77aee3728d1e1  contract/protocol.js
 a2215a1bc5fc1b3f88a598aafb3271cc  contract/split.mjs
 ```

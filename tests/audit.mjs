@@ -8,8 +8,11 @@ import { createHash } from 'node:crypto';
 // ---- one shared stub base for every actor --------------------------------
 class SharedBase {
   constructor() { this.map = new Map(); }
-  async get(key) { return this.map.has(key) ? this.map.get(key) : null; }
-  async put(key, value) { this.map.set(key, value); }
+  // Faithful to trac-peer storage semantics: every get returns a fresh
+  // deserialized copy, so in-place mutation of a returned record cannot
+  // leak into stored state before an explicit put.
+  async get(key) { return this.map.has(key) ? JSON.parse(JSON.stringify(this.map.get(key))) : null; }
+  async put(key, value) { this.map.set(key, JSON.parse(JSON.stringify(value))); }
   async del(key) { this.map.delete(key); }
   hash() {
     const keys = [...this.map.keys()].sort();
@@ -236,6 +239,47 @@ await reject('non-operator cannot self-appoint staker', () =>
 await reject('staker flag on unregistered address refused', () =>
   actor(OP, { member: '9'.repeat(64), enabled: true }).setStaker());
 
+// ---- 8b. auto-stake preference --------------------------------------------
+console.log('\n[8b] auto-stake');
+await reject('non-member cannot set auto-stake', () =>
+  actor(EVIL, { member: M1, enabled: true }).setAutoStake());
+await reject('auto-stake on unregistered address refused', () =>
+  actor(M2, { member: '9'.repeat(64), enabled: true }).setAutoStake());
+await accept('M1 enables auto-stake (own record)', () =>
+  actor(M1, { member: M1, enabled: true }).setAutoStake());
+{
+  const rec = await BASE.get('member/' + M1);
+  if (rec.autoStake === true) ok('auto-stake flag stored on M1');
+  else bad('auto-stake flag missing', new Error(JSON.stringify(rec)));
+}
+await accept('M1 disables auto-stake again (toggle off works)', () =>
+  actor(M1, { member: M1, enabled: false }).setAutoStake());
+{
+  const rec = await BASE.get('member/' + M1);
+  if (rec.autoStake === false) ok('auto-stake flag cleared on M1');
+  else bad('auto-stake flag not cleared', new Error(JSON.stringify(rec)));
+}
+await accept('M1 re-enables auto-stake for the settle test', () =>
+  actor(M1, { member: M1, enabled: true }).setAutoStake());
+
+// settle round 502: M1 has autoStake on, M2/M3 do not → M1 compounds, others accumulate
+{
+  const preTotals = await BASE.get('totals');
+  const m1Pre = await BASE.get('member/' + M1);
+  await accept('snapshot round 502', () => actor(OP, { round: 502 }).roundSnapshot());
+  await accept('settle round 502', () => actor(OP, { round: 502, amount: '10000000' }).roundSettle());
+  const m1Post = await BASE.get('member/' + M1);
+  const postTotals = await BASE.get('totals');
+  const principalDelta = BigInt(m1Post.principal) - BigInt(m1Pre.principal);
+  if (principalDelta > 0n && BigInt(m1Post.earnings) === BigInt(m1Pre.earnings)) ok(`auto-stake member compounded +${principalDelta} into principal`);
+  else bad('auto-stake member did not compound', new Error(`principal delta ${principalDelta}`));
+  if (BigInt(postTotals.principal) > BigInt(preTotals.principal)) ok('totals.principal grew by the compounded amount');
+  else bad('totals.principal not updated by compounding', new Error('no growth'));
+  const m2Post = await BASE.get('member/' + M2);
+  if (BigInt(m2Post.earnings) > 0n) ok('non-auto-stake member still accumulates earnings');
+  else bad('non-auto-stake member got no earnings', new Error('earnings empty'));
+}
+
 // ---- 9. staker round: fee-free + dividend, and the 2-receiver split still holds
 console.log('\n[9] staker round');
 await accept('operator flags M1 as staker', () => actor(OP, { member: M1, enabled: true }).setStaker());
@@ -458,8 +502,8 @@ console.log('\n[11] immutability');
   // there is no setter for feeBps / minDeposit / minPayout anywhere
   const proto = Object.getPrototypeOf(await mk(OP, {}));
   const setters = Object.getOwnPropertyNames(proto)
-    .filter(n => /^(set|update|change|config|param)/i.test(n) && n !== 'setStaker' && n !== 'setFeeReceivers');
-  if (!setters.length) ok('no parameter setter exists on the contract (only setStaker and setFeeReceivers)');
+    .filter(n => /^(set|update|change|config|param)/i.test(n) && n !== 'setStaker' && n !== 'setFeeReceivers' && n !== 'setAutoStake');
+  if (!setters.length) ok('no parameter setter exists on the contract (only setStaker, setFeeReceivers, setAutoStake)');
   else bad('unexpected setter found: ' + setters.join(','), new Error('immutability broken'));
 
   // the fee tiers live in split.mjs, which the version lock pins byte-for-byte

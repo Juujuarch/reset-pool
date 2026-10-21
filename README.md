@@ -151,7 +151,7 @@ md5sum contract/contract.js contract/protocol.js contract/split.mjs
 Expected for this release:
 
 ```
-4d3c316d090852bd63b856d56204013b  contract/contract.js
+fe06ee601c2eb7a5e1e015ee35ad9c04  contract/contract.js
 fd12e721351cddad91d77aee3728d1e1  contract/protocol.js
 a2215a1bc5fc1b3f88a598aafb3271cc  contract/split.mjs
 ```

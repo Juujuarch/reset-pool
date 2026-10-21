@@ -30,6 +30,8 @@ class PoolContract extends Contract {
       member: ADDR } });
     this.addSchema('setStaker', { value: { $$strict: true, $$type: 'object',
       member: ADDR, enabled: { type: 'boolean' } } });
+    this.addSchema('setAutoStake', { value: { $$strict: true, $$type: 'object',
+      member: ADDR, enabled: { type: 'boolean' } } });
     this.addSchema('depositCredit', { value: { $$strict: true, $$type: 'object',
       member: ADDR, amount: AMOUNT, txRef: TXREF } });
 
@@ -152,8 +154,22 @@ class PoolContract extends Contract {
     if (existing) return existing.peer === this.address;
     const members = (await this.get('members')) || [];
     members.push(member);
-    await this.put('member/' + member, { peer: this.address, principal: '0', earnings: '0', exiting: '0', staker: false });
+    await this.put('member/' + member, { peer: this.address, principal: '0', earnings: '0', exiting: '0', staker: false, autoStake: false });
     await this.put('members', members);
+  }
+
+  // Member-owned preference: when true, round earnings are compounded into
+  // the member's own principal at settle time instead of accumulating as a
+  // withdrawable earnings balance. The member flips this themselves at any
+  // time; the change takes effect from the next settled round, never
+  // retroactively, and the operator cannot set it.
+  async setAutoStake() {
+    const config = await this.cfg();
+    if (!config) return false;
+    const rec = await this.get('member/' + this.value.member);
+    if (!rec || rec.peer !== this.address) return false;
+    rec.autoStake = this.value.enabled === true;
+    await this.put('member/' + this.value.member, rec);
   }
 
   // ─── operator: deposit ───────────────────────────────────────────────────
@@ -224,16 +240,25 @@ class PoolContract extends Contract {
     });
     const totals = await this.totals();
     const updates = [];
+    let compounded = 0n;
     for (const member of Object.keys(split.perMember)) {
       const rec = await this.get('member/' + member);
       if (!rec) return false;
       let credit = this.protocol.safeBigInt(split.perMember[member]);
       if (split.perDividend[member]) credit += this.protocol.safeBigInt(split.perDividend[member]);
-      rec.earnings = (this.protocol.safeBigInt(rec.earnings) + credit).toString();
+      if (rec.autoStake === true && this.protocol.safeBigInt(rec.exiting) === 0n) {
+        // compound: earnings go straight into the member's own principal.
+        // Refused only while an exit is pending, mirroring deposit_credit.
+        rec.principal = (this.protocol.safeBigInt(rec.principal) + credit).toString();
+        totals.principal = (this.protocol.safeBigInt(totals.principal) + credit).toString();
+        compounded += credit;
+      } else {
+        rec.earnings = (this.protocol.safeBigInt(rec.earnings) + credit).toString();
+      }
       updates.push([member, rec]);
     }
     const credited = this.protocol.safeBigInt(this.value.amount) - this.protocol.safeBigInt(split.dust) - this.protocol.safeBigInt(split.operatorFee);
-    totals.earningsOwed = (this.protocol.safeBigInt(totals.earningsOwed) + credited).toString();
+    totals.earningsOwed = (this.protocol.safeBigInt(totals.earningsOwed) + credited - compounded).toString();
     totals.feesAccrued = (this.protocol.safeBigInt(totals.feesAccrued) + this.protocol.safeBigInt(split.operatorFee)).toString();
     totals.dust = (this.protocol.safeBigInt(totals.dust) + this.protocol.safeBigInt(split.dust)).toString();
     round.settled = this.value.amount;
@@ -403,6 +428,12 @@ class PoolContract extends Contract {
       console.log('pool stakers (share bps ' + (config.stakerShareBps ?? 5000) + ', min principal ' + (config.minStakerPrincipal ?? '50000000') + '):', stakerList);
       const outstanding = this.protocol.safeBigInt(totals.feesAccrued) - this.protocol.safeBigInt(totals.feesSwept);
       console.log('pool fee receivers:', { receivers: config.feeReceivers ?? '(unset)', locked: config.feeReceiversLocked === true, outstanding: outstanding.toString() });
+      const autoStakers = [];
+      for (const m of members) {
+        const rec = await this.get('member/' + m);
+        if (rec && rec.autoStake === true) autoStakers.push(m);
+      }
+      console.log('pool auto-stake members:', autoStakers.length, 'of', members.length);
     }
     console.log('pool totals:', totals);
     console.log('pool members:', members.length);
