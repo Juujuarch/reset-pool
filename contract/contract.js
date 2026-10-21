@@ -20,10 +20,12 @@ class PoolContract extends Contract {
   constructor(protocol, options = {}) {
     super(protocol, options);
 
+    const FEE_RECV = { type: 'array', min: 1, max: 4,
+      items: { $$strict: true, $$type: 'object', address: ADDR, bps: { type: 'number', integer: true, min: 0, max: 10000 } } };
     this.addSchema('poolInit', { value: { $$strict: true, $$type: 'object',
-      poolWallet: ADDR, feeReceiver: ADDR } });
-    this.addSchema('setFeeReceiver', { value: { $$strict: true, $$type: 'object',
-      feeReceiver: ADDR } });
+      poolWallet: ADDR, feeReceivers: FEE_RECV } });
+    this.addSchema('setFeeReceivers', { value: { $$strict: true, $$type: 'object',
+      feeReceivers: FEE_RECV } });
     this.addSchema('memberRegister', { value: { $$strict: true, $$type: 'object',
       member: ADDR } });
     this.addSchema('setStaker', { value: { $$strict: true, $$type: 'object',
@@ -72,6 +74,26 @@ class PoolContract extends Contract {
     return b;
   }
 
+  // Splits a fee amount across the configured receivers, largest-remainder
+  // method, conserving every unit: sum(parts) == amount.
+  static splitFee(feeReceivers, amountUnits, protocol) {
+    const amount = protocol.safeBigInt(amountUnits);
+    const totalBps = feeReceivers.reduce((a, r) => a + r.bps, 0);
+    if (totalBps !== 10000) return null;
+    const parts = [];
+    let assigned = 0n;
+    for (const r of feeReceivers) {
+      const raw = amount * BigInt(r.bps);
+      const floor = raw / 10000n;
+      parts.push({ address: r.address, bps: r.bps, floor, remainder: raw % 10000n });
+      assigned += floor;
+    }
+    let leftover = amount - assigned;
+    parts.sort((a, b) => (b.remainder > a.remainder ? 1 : b.remainder < a.remainder ? -1 : 0));
+    for (const p of parts) { if (leftover > 0n) { p.amount = p.floor + 1n; leftover -= 1n; } else p.amount = p.floor; }
+    return parts.map(p => ({ address: p.address, amount: p.amount.toString() }));
+  }
+
   // ─── init (one-shot) ─────────────────────────────────────────────────────
 
   // pool_init must be sent by the operator in the same transaction that
@@ -79,18 +101,24 @@ class PoolContract extends Contract {
   // the operator.
   async poolInit() {
     if (await this.get('config')) return false;
-    if (this.value.feeReceiver === this.value.poolWallet) return false;
+    const feeReceivers = this.value.feeReceivers ?? null;
+    if (feeReceivers) {
+      if (feeReceivers.reduce((a, r) => a + r.bps, 0) !== 10000) return false;
+      if (feeReceivers.some(r => r.address === this.value.poolWallet)) return false;
+      const seen = new Set();
+      for (const r of feeReceivers) { if (seen.has(r.address)) return false; seen.add(r.address); }
+    }
     const config = {
       operator: this.address,
       poolWallet: this.value.poolWallet,
-      feeReceiver: this.value.feeReceiver,
+      feeReceivers,                       // [{address, bps}] summing to 10000
       feeBps: 400,                     // 4% of earnings, frozen
       minDeposit: '100000',            // 0.001 RESET, frozen
       minPayout: '1000000',            // 0.01 RESET, frozen
       stakerShareBps: 5000,            // 50% of fees to stakers, frozen
       minStakerPrincipal: '50000000',  // 0.5 RESET, frozen
-      feeMode: 'flat-v5-immutable',
-      feeReceiverLocked: this.value.feeReceiver !== null,
+      feeMode: 'split-v6-immutable',
+      feeReceiversLocked: feeReceivers !== null,
     };
     await this.put('config', config);
     await this.put('members', []);
@@ -98,15 +126,19 @@ class PoolContract extends Contract {
     await this.put('counters', await this.counters());
   }
 
-  // The fee receiver can be set exactly once, and only while still empty.
+  // The fee receivers can be set exactly once, and only while still empty.
   // After that it is locked: there is no path to change it.
-  async setFeeReceiver() {
+  async setFeeReceivers() {
     const config = await this.cfg();
     if (!this.isOp(config)) return false;
-    if (config.feeReceiverLocked) return false;
-    if (this.value.feeReceiver === config.poolWallet) return false;
-    config.feeReceiver = this.value.feeReceiver;
-    config.feeReceiverLocked = true;
+    if (config.feeReceiversLocked) return false;
+    const frs = this.value.feeReceivers;
+    if (frs.reduce((a, r) => a + r.bps, 0) !== 10000) return false;
+    if (frs.some(r => r.address === config.poolWallet)) return false;
+    const seen = new Set();
+    for (const r of frs) { if (seen.has(r.address)) return false; seen.add(r.address); }
+    config.feeReceivers = frs;
+    config.feeReceiversLocked = true;
     await this.put('config', config);
   }
 
@@ -306,27 +338,31 @@ class PoolContract extends Contract {
   async feeSweep() {
     const config = await this.cfg();
     if (!this.isOp(config)) return false;
-    if (!config.feeReceiverLocked || !config.feeReceiver) return false;
+    if (!config.feeReceiversLocked || !config.feeReceivers) return false;
     if (await this.get('sweep/' + this.value.txRef)) return false;
     const totals = await this.totals();
     const amt = this.amt(this.value.amount);
     const outstanding = this.protocol.safeBigInt(totals.feesAccrued) - this.protocol.safeBigInt(totals.feesSwept);
     if (amt > outstanding) return false;
+    const parts = PoolContract.splitFee(config.feeReceivers, this.value.amount, this.protocol);
+    if (!parts) return false;
     totals.feesSwept = (this.protocol.safeBigInt(totals.feesSwept) + amt).toString();
-    await this.put('sweep/' + this.value.txRef, { amount: this.value.amount, feeReceiver: config.feeReceiver });
+    await this.put('sweep/' + this.value.txRef, { amount: this.value.amount, parts });
     await this.put('totals', totals);
   }
 
   async dustSweep() {
     const config = await this.cfg();
     if (!this.isOp(config)) return false;
-    if (!config.feeReceiverLocked || !config.feeReceiver) return false;
+    if (!config.feeReceiversLocked || !config.feeReceivers) return false;
     if (await this.get('sweep/' + this.value.txRef)) return false;
     const totals = await this.totals();
     const amt = this.amt(this.value.amount);
     if (amt > this.protocol.safeBigInt(totals.dust)) return false;
+    const parts = PoolContract.splitFee(config.feeReceivers, this.value.amount, this.protocol);
+    if (!parts) return false;
     totals.dust = (this.protocol.safeBigInt(totals.dust) - amt).toString();
-    await this.put('sweep/' + this.value.txRef, { amount: this.value.amount, feeReceiver: config.feeReceiver, dust: true });
+    await this.put('sweep/' + this.value.txRef, { amount: this.value.amount, parts, dust: true });
     await this.put('totals', totals);
   }
 
@@ -366,7 +402,7 @@ class PoolContract extends Contract {
       }
       console.log('pool stakers (share bps ' + (config.stakerShareBps ?? 5000) + ', min principal ' + (config.minStakerPrincipal ?? '50000000') + '):', stakerList);
       const outstanding = this.protocol.safeBigInt(totals.feesAccrued) - this.protocol.safeBigInt(totals.feesSwept);
-      console.log('pool fee receiver:', { receiver: config.feeReceiver ?? '(unset)', locked: config.feeReceiverLocked === true, outstanding: outstanding.toString() });
+      console.log('pool fee receivers:', { receivers: config.feeReceivers ?? '(unset)', locked: config.feeReceiversLocked === true, outstanding: outstanding.toString() });
     }
     console.log('pool totals:', totals);
     console.log('pool members:', members.length);

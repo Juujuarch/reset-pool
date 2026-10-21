@@ -75,18 +75,40 @@ console.log('=== v4 pool contract adversarial harness ===\n');
 
 // ---- 1. init ---------------------------------------------------------------
 console.log('[1] init');
+const RECV = [{ address: R1, bps: 6000 }, { address: R2, bps: 4000 }]; // 60/40 split
 await accept('operator inits pool', () =>
-  actor(OP, { poolWallet: 'f'.repeat(64), feeReceiver: R1 }).poolInit());
+  actor(OP, { poolWallet: 'f'.repeat(64), feeReceivers: RECV }).poolInit());
 
 const cfg = await BASE.get('config');
 assert.equal(cfg.operator, OP);
-assert.equal(cfg.feeReceiver, R1);
-assert.equal(cfg.feeMode, 'flat-v5-immutable');
+assert.deepEqual(cfg.feeReceivers, RECV);
+assert.equal(cfg.feeMode, 'split-v6-immutable');
 assert.equal(cfg.feeBps, 400);
-ok('config records both receivers and the split');
+ok('config records the receiver split (60/40)');
 
 await reject('second poolInit refused', () =>
-  actor(OP, { poolWallet: 'f'.repeat(64), feeReceiver: R1 }).poolInit());
+  actor(OP, { poolWallet: 'f'.repeat(64), feeReceivers: RECV }).poolInit());
+
+// split validation at init
+{
+  const b = new SharedBase(); const p = new StubProtocol(b);
+  const mk = (addr, value) => { const c = new PoolContract(p, {}); c.address = addr; c.value = value;
+    c.get = k => b.get(k); c.put = (k, v) => b.put(k, v); c.del = k => b.del(k);
+    c.assert = (cond, err) => { if (!cond) throw err; }; return c; };
+  const PW = 'f'.repeat(64);
+  const before = b.hash();
+  await mk(OP, { poolWallet: PW, feeReceivers: [{ address: R1, bps: 6000 }, { address: R2, bps: 3000 }] }).poolInit();
+  if (b.hash() !== before) bad('bps != 10000 accepted at init', new Error('mutated'));
+  else ok('init refuses a split that does not sum to 10000 bps');
+
+  await mk(OP, { poolWallet: PW, feeReceivers: [{ address: PW, bps: 10000 }] }).poolInit();
+  if (b.hash() !== before) bad('receiver == poolWallet accepted', new Error('mutated'));
+  else ok('init refuses a receiver equal to the pool wallet');
+
+  await mk(OP, { poolWallet: PW, feeReceivers: [{ address: R1, bps: 5000 }, { address: R1, bps: 5000 }] }).poolInit();
+  if (b.hash() !== before) bad('duplicate receiver addresses accepted', new Error('mutated'));
+  else ok('init refuses duplicate receiver addresses');
+}
 
 // ---- 2. registration -------------------------------------------------------
 console.log('\n[2] registration');
@@ -132,7 +154,7 @@ ok(`operator fee accrued to the single receiver: ${opFee}`);
 
 const totals = await BASE.get('totals');
 assert.equal(BigInt(totals.feesAccrued), opFee);
-ok('totals track the single receiver accrual');
+ok('totals track the split-receiver accrual');
 
 let memberSum = 0n;
 for (const m of [M1, M2, M3]) memberSum += BigInt((await BASE.get('member/' + m)).earnings);
@@ -177,7 +199,21 @@ await reject('non-operator cannot sweep', () =>
 
 const t2 = await BASE.get('totals');
 assert.equal(BigInt(t2.feesSwept), opFee);
-ok('sweep is bounded and single-destination');
+ok('sweep is bounded');
+
+// the sweep record must split the fee across both receivers, conserving units
+{
+  const rec = await BASE.get('sweep/sw1');
+  const parts = rec.parts;
+  assert.equal(parts.length, 2, 'expected two receiver parts');
+  const sum = parts.reduce((a, p) => a + BigInt(p.amount), 0n);
+  assert.equal(sum, opFee, 'split parts do not conserve the fee');
+  const r1Amt = BigInt(parts.find(p => p.address === R1).amount);
+  const r2Amt = BigInt(parts.find(p => p.address === R2).amount);
+  // 60/40 split with largest-remainder: r1 gets the ceil, r2 the floor (or equal)
+  assert.ok(r1Amt > r2Amt, '60% receiver did not receive the larger part');
+  ok(`splitFee verified: R1=${r1Amt} R2=${r2Amt} (60/40, conservation exact)`);
+}
 
 // ---- 7. member overreach ---------------------------------------------------
 console.log('\n[7] member overreach');
@@ -229,11 +265,11 @@ console.log('\n[10] hardening');
   };
   const P0 = 'f'.repeat(64);
   let accepted = 0;
-  for (const [pw, r1, label] of [
-    [P0, P0, 'poolWallet == feeReceiver']
+  for (const [pw, recv, label] of [
+    [P0, [{ address: P0, bps: 10000 }], 'poolWallet == feeReceiver']
   ]) {
     const before = b.hash();
-    await mk(OP, { poolWallet: pw, feeReceiver: r1, feeBps: 400 }).poolInit();
+    await mk(OP, { poolWallet: pw, feeReceivers: recv }).poolInit();
     if (b.hash() !== before) { accepted++; bad(label + ' accepted', new Error('init mutated state')); }
     else ok(label + ' refused');
   }
@@ -257,7 +293,7 @@ await reject('exit below 0.001 floor refused', () =>
     return c;
   };
   const D1 = '1'.repeat(64), D2 = '2'.repeat(64), D3 = '3'.repeat(64);
-  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceiver: R1 }).poolInit();
+  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceivers: RECV }).poolInit();
   for (const m of [D1, D2, D3]) await mk(m, { member: m }).memberRegister();
   await mk(OP, { member: D1, amount: '33333333', txRef: 'd1' }).depositCredit();
   await mk(OP, { member: D2, amount: '33333333', txRef: 'd2' }).depositCredit();
@@ -298,7 +334,7 @@ await reject('exit below 0.001 floor refused', () =>
     return c;
   };
   const E1 = 'e1'.padEnd(64, '0');
-  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceiver: R1 }).poolInit();
+  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceivers: RECV }).poolInit();
   await mk(E1, { member: E1 }).memberRegister();
   await mk(OP, { member: E1, amount: '10000000', txRef: 'e0' }).depositCredit();
   await mk(E1, { member: E1, amount: '10000000' }).exitRequest();
@@ -326,7 +362,7 @@ await reject('exit below 0.001 floor refused', () =>
     return c;
   };
   const S1 = '51'.padEnd(64, '0');
-  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceiver: R1 }).poolInit();
+  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceivers: RECV }).poolInit();
   await mk(S1, { member: S1 }).memberRegister();
   await mk(OP, { member: S1, amount: '10000000', txRef: 's1' }).depositCredit();
   const before = b.hash();
@@ -351,11 +387,13 @@ console.log('\n[11] immutability');
   const I1 = '11'.padEnd(64, '0');
   const VAULT = 'aa'.padEnd(64, '0');
   const OTHER = 'bb'.padEnd(64, '0');
+  const RECV1 = [{ address: VAULT, bps: 10000 }];
+  const RECV2 = [{ address: OTHER, bps: 10000 }];
 
   // init with NO fee receiver (vault not built yet)
-  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceiver: null }).poolInit();
+  await mk(OP, { poolWallet: 'f'.repeat(64), feeReceivers: null }).poolInit();
   const c0 = await b.get('config');
-  if (c0.feeReceiver === null && c0.feeReceiverLocked === false) ok('init accepts an unset fee receiver');
+  if (c0.feeReceivers === null && c0.feeReceiversLocked === false) ok('init accepts an unset fee receiver');
   else bad('unset receiver not stored', new Error(JSON.stringify(c0)));
 
   // fees cannot be swept while the receiver is unset
@@ -365,20 +403,20 @@ console.log('\n[11] immutability');
   await mk(OP, { round: 700, amount: '10000000' }).roundSettle();
   const pre = b.hash();
   await mk(OP, { amount: '1', txRef: 'swx' }).feeSweep();
-  if (b.hash() === pre) ok('feeSweep refused while feeReceiver is unset');
+  if (b.hash() === pre) ok('feeSweep refused while feeReceivers is unset');
   else bad('feeSweep ran without a receiver', new Error('state mutated'));
 
   // set it once
-  await mk(OP, { feeReceiver: VAULT }).setFeeReceiver();
+  await mk(OP, { feeReceivers: RECV1 }).setFeeReceivers();
   const c1 = await b.get('config');
-  if (c1.feeReceiver === VAULT && c1.feeReceiverLocked === true) ok('feeReceiver set once and locked');
-  else bad('setFeeReceiver failed', new Error(JSON.stringify(c1)));
+  if (JSON.stringify(c1.feeReceivers) === JSON.stringify(RECV1) && c1.feeReceiversLocked === true) ok('feeReceivers set once and locked');
+  else bad('setFeeReceivers failed', new Error(JSON.stringify(c1)));
 
   // cannot change it again, even by the operator
   const locked = b.hash();
-  await mk(OP, { feeReceiver: OTHER }).setFeeReceiver();
-  if (b.hash() === locked) ok('feeReceiver cannot be changed a second time');
-  else bad('feeReceiver was reassigned', new Error('state mutated'));
+  await mk(OP, { feeReceivers: RECV2 }).setFeeReceivers();
+  if (b.hash() === locked) ok('feeReceivers cannot be changed a second time');
+  else bad('feeReceivers was reassigned', new Error('state mutated'));
 
   // non-operator cannot set it either (fresh pool, unset receiver)
   {
@@ -391,14 +429,14 @@ console.log('\n[11] immutability');
       c.assert = (cond, err) => { if (!cond) throw err; };
       return c;
     };
-    await mk2(OP, { poolWallet: 'f'.repeat(64), feeReceiver: null }).poolInit();
+    await mk2(OP, { poolWallet: 'f'.repeat(64), feeReceivers: null }).poolInit();
     const pre2 = b2.hash();
-    await mk2(EVIL, { feeReceiver: EVIL }).setFeeReceiver();
-    if (b2.hash() === pre2) ok('non-operator cannot set the fee receiver');
-    else bad('non-operator set the fee receiver', new Error('state mutated'));
+    await mk2(EVIL, { feeReceivers: [{ address: EVIL, bps: 10000 }] }).setFeeReceivers();
+    if (b2.hash() === pre2) ok('non-operator cannot set the fee receivers');
+    else bad('non-operator set the fee receivers', new Error('state mutated'));
   }
 
-  // feeReceiver cannot equal the pool wallet
+  // a receiver equal to the pool wallet is refused
   {
     const b3 = new SharedBase();
     const p3 = new StubProtocol(b3);
@@ -410,9 +448,9 @@ console.log('\n[11] immutability');
       return c;
     };
     const PW = 'cc'.padEnd(64, '0');
-    await mk3(OP, { poolWallet: PW, feeReceiver: null }).poolInit();
+    await mk3(OP, { poolWallet: PW, feeReceivers: null }).poolInit();
     const pre3 = b3.hash();
-    await mk3(OP, { feeReceiver: PW }).setFeeReceiver();
+    await mk3(OP, { feeReceivers: [{ address: PW, bps: 10000 }] }).setFeeReceivers();
     if (b3.hash() === pre3) ok('feeReceiver equal to the pool wallet refused');
     else bad('receiver == pool wallet accepted', new Error('state mutated'));
   }
@@ -420,8 +458,8 @@ console.log('\n[11] immutability');
   // there is no setter for feeBps / minDeposit / minPayout anywhere
   const proto = Object.getPrototypeOf(await mk(OP, {}));
   const setters = Object.getOwnPropertyNames(proto)
-    .filter(n => /^(set|update|change|config|param)/i.test(n) && n !== 'setStaker' && n !== 'setFeeReceiver');
-  if (!setters.length) ok('no parameter setter exists on the contract (only setStaker and setFeeReceiver)');
+    .filter(n => /^(set|update|change|config|param)/i.test(n) && n !== 'setStaker' && n !== 'setFeeReceivers');
+  if (!setters.length) ok('no parameter setter exists on the contract (only setStaker and setFeeReceivers)');
   else bad('unexpected setter found: ' + setters.join(','), new Error('immutability broken'));
 
   // the fee tiers live in split.mjs, which the version lock pins byte-for-byte

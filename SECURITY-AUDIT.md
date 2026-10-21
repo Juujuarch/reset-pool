@@ -1,4 +1,4 @@
-# Security Audit — v5
+# Security Audit — v6
 
 Pre-launch review of `contract/contract.js`, `contract/split.mjs`, and `contract/protocol.js`.
 
@@ -28,16 +28,17 @@ node tests/audit.mjs
 
 ## Result
 
-**No drain path found.** No operation lets an outsider or a member take funds that are not theirs.
+**No drain path found.** No operation lets an outsider or a member take funds that are not theirs. Fee sweeps split across up to 4 configured receivers by basis points (largest-remainder, conservation exact); the split is validated at init (must sum to 10000 bps, no duplicates, none equal to the pool wallet) and the receiver set is locked after being set once.
 
 ### Attacks refused
 
 | Category | Attempts |
 |---|---|
-| **Privilege** | Non-operator calling `pool_init`, `deposit_credit`, `round_snapshot`, `round_settle`, `set_staker`, `fee_sweep`, `dust_sweep`, `payout_paid`, `payout_cancel`, `exit_paid` |
+| **Privilege** | Non-operator calling `pool_init`, `deposit_credit`, `round_snapshot`, `round_settle`, `set_staker`, `set_fee_receivers`, `fee_sweep`, `dust_sweep`, `payout_paid`, `payout_cancel`, `exit_paid` |
 | **Replay** | Second `pool_init`; double credit of one transfer reference; double snapshot; double settle; double sweep of one reference |
 | **Member overreach** | Payout below the floor; payout above own earnings; payout against another member's record; exit above own principal; exit below the minimum; self-appointment as staker |
-| **Operator overreach** | Settle a round never snapshotted; credit an unregistered member; credit below the minimum; staker flag on an unregistered address; sweep above accrued fees; dust sweep above accumulated dust |
+| **Operator overreach** | Settle a round never snapshotted; credit an unregistered member; credit below the minimum; staker flag on an unregistered address; sweep above accrued fees; dust sweep above accumulated dust; receiver split not summing to 10000 bps; duplicate receiver addresses; a receiver equal to the pool wallet |
+| **Split integrity** | Second `set_fee_receivers` after lock; non-operator setting receivers; split parts failing conservation |
 
 ### Conservation
 
@@ -112,7 +113,7 @@ The pool wallet's keystore and password live on the operator's host with restric
 ## Release hashes
 
 ```
-d034471a78ab2bb20cc4d76a28b3f2c5  contract/contract.js
+4d3c316d090852bd63b856d56204013b  contract/contract.js
 fd12e721351cddad91d77aee3728d1e1  contract/protocol.js
 218cc2c614b13cbd11d5e973258c75bc  contract/split.mjs
 ```
