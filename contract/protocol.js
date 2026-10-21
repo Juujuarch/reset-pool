@@ -144,7 +144,7 @@ class SampleProtocol extends Protocol{
                 payout_paid: 'payoutPaid', payout_cancel: 'payoutCancel',
                 exit_request: 'exitRequest', exit_paid: 'exitPaid',
                 fee_sweep: 'feeSweep', dust_sweep: 'dustSweep', solvency_read: 'solvencyRead',
-                set_fee_receiver: 'setFeeReceiver',
+                set_fee_receivers: 'setFeeReceivers', set_auto_stake: 'setAutoStake',
                 member_read: 'memberRead', pool_read: 'poolRead'
             };
             const poolType = routes[poolJson.op];

@@ -152,7 +152,7 @@ Expected for this release:
 
 ```
 fe06ee601c2eb7a5e1e015ee35ad9c04  contract/contract.js
-fd12e721351cddad91d77aee3728d1e1  contract/protocol.js
+8867ba67891745793e45dae9e9c299a4  contract/protocol.js
 a2215a1bc5fc1b3f88a598aafb3271cc  contract/split.mjs
 ```
 
