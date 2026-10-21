@@ -208,7 +208,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(ABOUT);
   }
-  if (req.url === '/dashboard') {
+  if (req.url === '/dashboard' || req.url === '/') {
     const d = await collect();
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(page(d));
