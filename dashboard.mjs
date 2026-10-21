@@ -204,15 +204,21 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' });
     return res.end(FAVICON);
   }
-  if (req.url === '/about') {
+  if (req.url === '/about' || req.url === '/home') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(ABOUT);
+  }
+  if (req.url === '/dashboard') {
+    const d = await collect();
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(page(d));
   }
   if (req.url === '/api/state') {
     const d = await collect();
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify(d, (k, v) => typeof v === 'bigint' ? String(v) : v));
   }
+  // '/' and '/dashboard' render the live dashboard; '/about' is the editorial home.
   const d = await collect();
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
   res.end(page(d));
