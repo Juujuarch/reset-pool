@@ -1,6 +1,4 @@
-// RESET POOL — Full dashboard (port 6969). TRAC-branded glossy red theme.
-// Palette: #EA5B64 (TRAC red) on #0E1416, text #E9E9EB.
-// Ledger data: data/pool-state.json (operator loop). 4747 untouched.
+// RESET POOL — dashboard (port 6969). Flat, tight, TRAC-like. No ornament.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,17 +16,12 @@ const DEC = 1e8;
 
 const f8 = (u) => (Number(u || 0) / DEC).toFixed(8);
 const fx = (u) => f8(u).replace(/\.?0+$/, (m) => (m.includes('.') ? '' : m)) || '0';
-const short = (a, n = 14) => (a && a.length > n + 4 ? a.slice(0, n) + '…' + a.slice(-6) : a || '—');
+const short = (a, n = 16) => (a && a.length > n + 4 ? a.slice(0, n) + '…' + a.slice(-6) : a || '—');
 
 async function gw(p) {
   const res = await fetch(`${GATEWAY}${p}`, { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`gateway ${res.status}`);
   return res.json();
-}
-
-async function walletBalance(addr) {
-  if (!addr) return null;
-  try { return (await gw(`/account/${addr}`))?.balance ?? null; } catch { return null; }
 }
 
 async function collect() {
@@ -44,72 +37,59 @@ async function collect() {
       blocksToClaimEnd: st.tip?.height && m.claim_end ? Math.max(0, m.claim_end - st.tip.height) : null,
     };
   } catch (e) { out.errors.push('chain: ' + e.message); }
-  if (POOL_WALLET) out.poolBal = await walletBalance(POOL_WALLET);
+  if (POOL_WALLET) {
+    try { out.poolBal = (await gw(`/account/${POOL_WALLET}`))?.balance ?? null; } catch { out.poolBal = null; }
+  }
   try { out.ledger = JSON.parse(fs.readFileSync(LEDGER_FILE, 'utf8')); } catch { out.ledger = null; }
   return out;
 }
 
-function estimate(chain, poolPrincipalUnits, memberPrincipalUnits) {
-  if (!chain?.guideline || !poolPrincipalUnits || !memberPrincipalUnits) return null;
-  const gross = Number(BigInt(chain.guideline) * BigInt(memberPrincipalUnits) / BigInt(poolPrincipalUnits));
-  const feeBps = memberPrincipalUnits >= 20 * DEC ? 0 : memberPrincipalUnits >= 5 * DEC ? 200 : memberPrincipalUnits >= 1 * DEC ? 500 : 1000;
+function estimate(chain, poolP, memberP) {
+  if (!chain?.guideline || !poolP || !memberP) return null;
+  const gross = Number(BigInt(chain.guideline) * BigInt(memberP) / BigInt(poolP));
+  const feeBps = memberP >= 20 * DEC ? 0 : memberP >= 5 * DEC ? 200 : memberP >= 1 * DEC ? 500 : 1000;
   const net = gross * (1 - feeBps / 10000);
-  return { net, feeBps, perDay: net * 24, perWeek: net * 24 * 7, perMonth: net * 24 * 30 };
+  return { net, perDay: net * 24, perWeek: net * 24 * 7, perMonth: net * 24 * 30 };
 }
 
-const tierTable = () => `<table><thead><tr><th>Principal kamu</th><th class="num">Fee earnings</th></tr></thead><tbody>
-  <tr><td>&lt; 1 RESET</td><td class="num red">10%</td></tr>
-  <tr><td>1 – 5 RESET</td><td class="num red">5%</td></tr>
-  <tr><td>5 – 20 RESET</td><td class="num red">2%</td></tr>
-  <tr><td>≥ 20 RESET</td><td class="num ok">0%</td></tr>
-  <tr><td>⭐ Staker (whitelisted, ≥ 0.5)</td><td class="num ok">0% + 50% bagan fee</td></tr>
-  </tbody></table>`;
-
 function ledgerSection(L) {
-  if (!L) return `<div class="empty">⏳ Ledger belum aktif — kontrak belum di-deploy. Data muncul otomatis setelah claim loop jalan.</div>`;
+  if (!L) return `<tr><td colspan="4" class="muted">Ledger not active yet. Numbers appear once the contract is deployed and the claim loop is running.</td></tr>`;
   const t = L.totals || {};
   const members = (L.members || []).slice().sort((a, b) => Number(b.principal) - Number(a.principal));
-  const rows = members.map(m => `<tr>
-    <td><code>${short(m.address)}</code></td>
-    <td class="num">${f8(m.principal)}</td>
-    <td class="num red">${f8(m.earnings)}</td>
-    <td>${m.staker ? '⭐' : '<span class="dim">member</span>'}</td>
-    <td>${Number(m.exiting) > 0 ? f8(m.exiting) : '<span class="dim">—</span>'}</td></tr>`).join('');
-  const rounds = (L.rounds || []).slice(-24).reverse().map(r => `<tr>
-    <td>#${r.round}</td><td class="num">${f8(r.amount)}</td><td class="num red">${f8(r.fee || 0)}</td><td class="num dim">${f8(r.dust || 0)}</td></tr>`).join('');
+  const roundRows = (L.rounds || []).slice(-24).reverse().map(r =>
+    `<tr><td>#${r.round}</td><td class="num">${f8(r.amount)}</td><td class="num">${f8(r.fee || 0)}</td><td class="num">${f8(r.dust || 0)}</td></tr>`).join('');
   return `
-  <div class="grid">
-    <div class="card glow"><div class="label">Total Principal</div><div class="big">${fx(t.principal)} <span class="unit">RESET</span></div></div>
-    <div class="card"><div class="label">Earnings Owed</div><div class="big red">${fx(t.earningsOwed)}</div></div>
-    <div class="card"><div class="label">Fees Accrued</div><div class="big red">${fx(t.feesAccrued)}</div></div>
-    <div class="card"><div class="label">Fees Swept</div><div class="big">${fx(t.feesSwept)}</div></div>
-    <div class="card"><div class="label">Dust</div><div class="big dim">${fx(t.dust)}</div></div>
-    <div class="card glow"><div class="label">Members</div><div class="big">${members.length}</div></div>
+  <div class="stats">
+    <div><span class="k">Principal</span><span class="v">${fx(t.principal)}</span></div>
+    <div><span class="k">Earnings owed</span><span class="v">${fx(t.earningsOwed)}</span></div>
+    <div><span class="k">Fees accrued</span><span class="v">${fx(t.feesAccrued)}</span></div>
+    <div><span class="k">Fees swept</span><span class="v">${fx(t.feesSwept)}</span></div>
+    <div><span class="k">Members</span><span class="v">${members.length}</span></div>
   </div>
-  <h2>Members</h2>
-  <table><thead><tr><th>Address</th><th class="num">Principal</th><th class="num">Earnings</th><th>Role</th><th>Exit</th></tr></thead>
-  <tbody>${rows || '<tr><td colspan=5 class="empty">belum ada member</td></tr>'}</tbody></table>
-  <h2>Rounds Settled</h2>
-  <table><thead><tr><th>Round</th><th class="num">Payout</th><th class="num">Fee</th><th class="num">Dust</th></tr></thead>
-  <tbody>${rounds || '<tr><td colspan=4 class="empty">belum ada round</td></tr>'}</tbody></table>`;
+  ${members.length ? `<table>
+  <thead><tr><th>Address</th><th class="num">Principal</th><th class="num">Earnings</th><th class="num">Exit</th></tr></thead>
+  <tbody>${members.map(m => `<tr>
+    <td class="mono">${short(m.address)}</td>
+    <td class="num">${f8(m.principal)}</td>
+    <td class="num">${f8(m.earnings)}</td>
+    <td class="num">${Number(m.exiting) > 0 ? f8(m.exiting) : '<span class="muted">–</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
+  ${L.rounds?.length ? `<table>
+  <thead><tr><th>Round</th><th class="num">Payout</th><th class="num">Fee</th><th class="num">Dust</th></tr></thead>
+  <tbody>${roundRows}</tbody></table>` : ''}`;
 }
 
 function calcSection(chain, L) {
   const poolP = L?.totals?.principal ? Number(L.totals.principal) : 0;
   const rows = [0.001, 0.01, 0.1, 0.5, 1, 5, 20].map(v => {
     const e = estimate(chain, poolP || 218092214228, Math.round(v * DEC));
-    return `<tr><td class="num">${v}</td>
-    <td class="num">${e ? fx(Math.round(e.net)) : '—'}</td>
-    <td class="num red">${e ? fx(Math.round(e.perDay)) : '—'}</td>
-    <td class="num">${e ? fx(Math.round(e.perWeek)) : '—'}</td>
-    <td class="num">${e ? fx(Math.round(e.perMonth)) : '—'}</td></tr>`;
+    return `<tr><td class="num">${v}</td><td class="num">${e ? fx(Math.round(e.net)) : '–'}</td>
+    <td class="num">${e ? fx(Math.round(e.perDay)) : '–'}</td>
+    <td class="num">${e ? fx(Math.round(e.perWeek)) : '–'}</td>
+    <td class="num">${e ? fx(Math.round(e.perMonth)) : '–'}</td></tr>`;
   }).join('');
-  return `
-  <h2>Estimasi Earnings <span class="live">● LIVE</span></h2>
-  <div class="sub">round #${chain?.round ?? '—'} · guideline ${chain ? fx(chain.guideline) : '—'} RESET/round · pool principal ${poolP ? fx(poolP) : 'belum ada (baseline network)'} · fee tier sudah dipotong</div>
-  <table><thead><tr><th class="num">Deposit</th><th class="num">Net/round</th><th class="num">/hari</th><th class="num">/minggu</th><th class="num">/bulan</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <div class="sub">Yield turun kalau total deposit network naik. Bukan janji hasil.</div>`;
+  return `<p class="note">Based on the live round guideline (${chain ? fx(chain.guideline) : '–'} RESET/round) and pro-rata share. Fees already deducted. Yield falls as network deposits rise.</p>
+  <table><thead><tr><th class="num">Deposit (RESET)</th><th class="num">Net/round</th><th class="num">Per day</th><th class="num">Per week</th><th class="num">Per month</th></tr></thead>
+  <tbody>${rows}</tbody></table>`;
 }
 
 function page(d) {
@@ -118,121 +98,102 @@ function page(d) {
   const t = L?.totals;
   const owed = t ? Number(t.principal) + Number(t.earningsOwed) + Number(t.dust) : null;
   const solv = (d.poolBal != null && owed != null) ? d.poolBal - owed : null;
-  const badges = [
-    POOL_WALLET ? `<span class="badge ok">pool wallet set</span>` : `<span class="badge warn">⏳ belum deploy</span>`,
-    c.round != null ? `<span class="badge">round #${c.round}</span>` : '',
-    c.windowOpen != null ? `<span class="badge ${c.windowOpen ? 'ok' : 'warn'}">window ${c.windowOpen ? 'OPEN' : 'closed'}</span>` : '',
-  ].join(' ');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>RESET POOL — poolreset.bond</title>
+<title>RESET Pool</title>
 <link rel="icon" type="image/png" href="/assets/trac-favicon.png">
-<link rel="apple-touch-icon" href="/assets/trac-favicon.png">
 <style>
-:root{
-  --bg:#0e1416; --bg2:#12191c; --card:rgba(234,91,100,.045); --card2:rgba(255,255,255,.02);
-  --line:rgba(234,91,100,.16); --line2:rgba(233,233,235,.07);
-  --txt:#e9e9eb; --dim:#8a9098; --red:#ea5b64; --red2:#ff8a91; --red-glow:rgba(234,91,100,.35);
-  --ok:#5fd39a; --warn:#f0b64c;
-}
+:root{--bg:#0e1416;--panel:#131a1d;--line:#21292d;--txt:#e9e9eb;--muted:#7d858c;--red:#ea5b64;--ok:#6fcf97}
 *{box-sizing:border-box;margin:0}
-body{
-  background:
-    radial-gradient(1100px 500px at 85% -10%, rgba(234,91,100,.13), transparent 60%),
-    radial-gradient(900px 420px at -10% 110%, rgba(234,91,100,.07), transparent 55%),
-    var(--bg);
-  color:var(--txt); font:14px/1.55 ui-monospace,'JetBrains Mono',Menlo,monospace;
-  padding:20px; max-width:1000px; margin:0 auto; min-height:100vh;
-}
-h1{font-size:21px;letter-spacing:.5px;display:flex;align-items:center;gap:10px}
-h1 .tag{font-size:10px;letter-spacing:2px;color:var(--red);border:1px solid var(--line);border-radius:99px;padding:3px 10px;background:var(--card);text-transform:uppercase}
-h2{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;margin:28px 0 10px;display:flex;align-items:center;gap:8px}
-h2::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
-.sub{color:var(--dim);font-size:12px;margin:6px 0 14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.card{
-  background:linear-gradient(160deg,var(--card),var(--card2));
-  border:1px solid var(--line); border-radius:14px; padding:14px 16px;
-  backdrop-filter:blur(6px); transition:border-color .2s, transform .2s;
-}
-.card:hover{border-color:rgba(234,91,100,.45); transform:translateY(-1px)}
-.card.glow{box-shadow:0 0 24px rgba(234,91,100,.12), inset 0 1px 0 rgba(255,255,255,.06); border-color:rgba(234,91,100,.35)}
-.label{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:1.4px}
-.big{font-size:17px;margin-top:5px;font-weight:600;text-shadow:0 0 18px rgba(234,91,100,.25)}
-.big.red{color:var(--red2)}
-.unit{font-size:11px;color:var(--dim);font-weight:400}
-table{width:100%;border-collapse:separate;border-spacing:0;background:var(--card2);border:1px solid var(--line2);border-radius:12px;overflow:hidden;margin-bottom:6px}
-th,td{padding:8px 12px;border-bottom:1px solid var(--line2);text-align:left;font-size:12.5px}
-tr:last-child td{border-bottom:none}
-th{color:var(--red2);background:rgba(234,91,100,.07);text-transform:uppercase;font-size:10px;letter-spacing:1.2px}
-tbody tr:hover td{background:rgba(234,91,100,.05)}
+body{background:var(--bg);color:var(--txt);font:15px/1.6 -apple-system,'Segoe UI',Inter,sans-serif;padding:0 24px 64px;max-width:1060px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;padding:28px 0 24px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;font-size:16px;font-weight:600;letter-spacing:.2px}
+.brand img{width:26px;height:26px}
+.brand small{color:var(--muted);font-weight:400;font-size:13px;margin-left:2px}
+nav a{color:var(--muted);text-decoration:none;font-size:14px;margin-left:24px}
+nav a:hover{color:var(--txt)}
+h2{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:36px 0 14px}
+.stats{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.stats>div{flex:1 1 150px;padding:16px 18px;border-right:1px solid var(--line)}
+.stats>div:last-child{border-right:none}
+.k{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.v{display:block;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--muted)}
+table{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:12px 0 0;background:var(--panel);font-size:14px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--line)}
+thead th{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;background:#101619}
+tbody tr:last-child td{border-bottom:none}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-td.red{color:var(--red2)} .red{color:var(--red2)} .ok{color:var(--ok)} .dim{color:var(--dim)}
-code{color:var(--red2);font-size:12px;background:rgba(234,91,100,.08);padding:1px 6px;border-radius:6px}
-.empty{color:var(--warn);padding:16px;text-align:center;font-size:12.5px}
-.badge{display:inline-block;padding:3px 12px;border-radius:99px;font-size:11px;border:1px solid var(--line);background:var(--card);margin-right:6px;color:var(--txt)}
-.badge.ok{color:var(--ok);border-color:rgba(95,211,154,.4)}
-.badge.warn{color:var(--warn);border-color:rgba(240,182,76,.4)}
-.live{color:var(--red);font-size:10px;letter-spacing:1px;animation:pulse 1.6s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.err{color:var(--bad);font-size:11px;margin-top:12px}
-.kv{display:grid;grid-template-columns:220px 1fr;gap:5px 16px;background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-size:12.5px}
-.kv .k{color:var(--dim)}
-a{color:var(--red2);text-decoration:none;border-bottom:1px dotted rgba(234,91,100,.4)}
-a:hover{border-bottom-style:solid}
-footer{margin-top:34px;color:var(--dim);font-size:11px;text-align:center;padding-top:16px;border-top:1px solid var(--line2)}
+.muted{color:var(--muted)} .ok{color:var(--ok)} .red{color:var(--red)}
+code{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--txt)}
+.note{color:var(--muted);font-size:13.5px;max-width:640px;margin-bottom:4px}
+.kv{border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.kv>div{display:grid;grid-template-columns:230px 1fr;gap:16px;padding:11px 18px;border-bottom:1px solid var(--line);font-size:14px}
+.kv>div:last-child{border-bottom:none}
+.kv .k{color:var(--muted)}
+ol{margin:0;padding:0;list-style:none;counter-reset:s}
+ol li{display:grid;grid-template-columns:230px 1fr;gap:16px;padding:11px 18px;border-bottom:1px solid var(--line);font-size:14px;counter-increment:s}
+ol li:last-child{border-bottom:none}
+ol li::before{content:counter(s);color:var(--red);font-weight:600;font-variant-numeric:tabular-nums}
+ol li b{color:var(--muted);font-weight:400;grid-column:1}
+ol li span{grid-column:2}
+a{color:var(--red);text-decoration:none}
+a:hover{text-decoration:underline}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+@media(max-width:640px){.kv>div,ol li{grid-template-columns:1fr}ol li b,ol li span{grid-column:1}ol li::before{grid-column:1}}
 </style></head><body>
-<h1><img src="/assets/trac-favicon.png" style="width:24px;height:24px">RESET POOL <span class="tag">on TRAC</span></h1>
-<div class="sub">poolreset.bond · fair-share pool buat deposit &lt; 0.1 RESET · fee 10/5/2/0% dari earnings saja · principal balik utuh</div>
-<div>${badges}</div>
+<header>
+  <div class="brand"><img src="/assets/trac-favicon.png" alt="">RESET Pool <small>· poolreset.bond</small></div>
+  <nav><a href="${REPO}">Source</a><a href="${REPO}/blob/main/TUTORIAL.md">Guide</a></nav>
+</header>
 
-<h2>Chain — Live</h2>
-<div class="grid">
-  <div class="card"><div class="label">BTC Tip</div><div class="big">${c.tip ?? '—'}</div></div>
-  <div class="card"><div class="label">Counted</div><div class="big">${c.counted ?? '—'}</div></div>
-  <div class="card glow"><div class="label">Round</div><div class="big red">#${c.round ?? '—'}</div></div>
-  <div class="card"><div class="label">Sisa round</div><div class="big">${c.blocksLeftInRound ?? '—'} <span class="unit">blk</span></div></div>
-  <div class="card"><div class="label">Claim window</div><div class="big" style="font-size:13px">${c.windowOpen ? '<span class="ok">OPEN</span> · ~' + (c.blocksToClaimEnd ?? '?') + ' blk' : '<span class="dim">closed</span>'}</div></div>
-  <div class="card"><div class="label">Guideline/round</div><div class="big">${c.guideline != null ? fx(c.guideline) : '—'}</div></div>
-  <div class="card"><div class="label">Claims ronde ini</div><div class="big">${c.claimCount ?? '—'}</div></div>
-  <div class="card"><div class="label">Total deposit Mine</div><div class="big">${c.claimDeposit != null ? fx(c.claimDeposit) : '—'}</div></div>
+<h2>Pool status</h2>
+<div class="stats">
+  <div><span class="k">Contract</span><span class="v ${POOL_WALLET ? 'ok' : ''}">${POOL_WALLET ? 'Live' : '<span class="muted">Pending</span>'}</span></div>
+  <div><span class="k">Round</span><span class="v">#${c.round ?? '–'}</span></div>
+  <div><span class="k">Claim window</span><span class="v ${c.windowOpen ? 'ok' : 'muted'}">${c.windowOpen != null ? (c.windowOpen ? 'Open' : 'Closed') : '–'}</span></div>
+  <div><span class="k">Pool balance</span><span class="v">${d.poolBal != null ? fx(d.poolBal) : '–'}</span></div>
+  <div><span class="k">Solvency</span><span class="v ${solv != null ? (solv >= 0 ? 'ok' : 'red') : ''}">${solv != null ? (solv >= 0 ? '+' : '−') + fx(Math.abs(solv)) : '–'}</span></div>
 </div>
 
-<h2>Pool Wallet &amp; Solvency</h2>
-<div class="kv">
-  <div class="k">Pool wallet (deposit)</div><div><code>${POOL_WALLET ? short(POOL_WALLET, 20) : '⏳ di-set saat deploy'}</code></div>
-  <div class="k">Balance on-chain</div><div>${d.poolBal != null ? f8(d.poolBal) + ' RESET' : '—'}</div>
-  <div class="k">Fee receiver</div><div><code>${short(FEE_WALLET, 20)}</code></div>
-  <div class="k">Utang ledger</div><div>${owed != null ? f8(owed) + ' RESET' : '—'}</div>
-  <div class="k">Solvency margin</div><div>${solv != null ? (solv >= 0 ? '<span class="ok">✅ +' : '<span class="red">❌ </span>') + f8(Math.abs(solv)) + '</span>' : '—'}</div>
+<h2>Network</h2>
+<div class="stats">
+  <div><span class="k">BTC tip</span><span class="v">${c.tip ?? '–'}</span></div>
+  <div><span class="k">Counted</span><span class="v">${c.counted ?? '–'}</span></div>
+  <div><span class="k">Guideline / round</span><span class="v">${c.guideline != null ? fx(c.guideline) : '–'}</span></div>
+  <div><span class="k">Claims this round</span><span class="v">${c.claimCount ?? '–'}</span></div>
+  <div><span class="k">Mine deposits</span><span class="v">${c.claimDeposit != null ? fx(c.claimDeposit) : '–'}</span></div>
 </div>
 
-<h2>Ledger Pool</h2>
-${ledgerSection(L)}
+<h2>Ledger</h2>
+<div class="stats">${ledgerSection(L)}</div>
 
+<h2>Estimated earnings</h2>
 ${calcSection(c, L)}
 
-<h2>Fee Tiers</h2>
-${tierTable()}
-<div class="sub">Fee hanya dari earnings — principal tidak pernah terpotong. Rate ngikutin principal kamu sendiri.</div>
+<h2>Fees</h2>
+<p class="note">Fees apply to earnings only — principal is returned in full. The rate depends on your own deposit, not the pool total.</p>
+<table><thead><tr><th>Your principal</th><th class="num">Fee on earnings</th></tr></thead><tbody>
+<tr><td>below 1 RESET</td><td class="num">10%</td></tr>
+<tr><td>1 – 5 RESET</td><td class="num">5%</td></tr>
+<tr><td>5 – 20 RESET</td><td class="num">2%</td></tr>
+<tr><td>20 RESET and above</td><td class="num ok">0%</td></tr>
+</tbody></table>
 
-<h2>Cara Join</h2>
-<div class="kv">
-  <div class="k">1 · Siapkan wallet</div><div>RESET wallet + ~0.15 TNK fee transaksi (min deposit <b>0.001 RESET</b>)</div>
-  <div class="k">2 · Clone kontrak</div><div><code>git clone ${REPO}</code> · verifikasi md5 sesuai README</div>
-  <div class="k">3 · Register + prove</div><div><code>member_register</code> + <code>sign_challenge</code> lewat agent/peer kamu</div>
-  <div class="k">4 · Deposit</div><div>Kirim RESET ke pool wallet → lapor txRef → credited otomatis</div>
-  <div class="k">5 · Pantau</div><div>Live di sini atau dari peer kamu sendiri (ledger tereplikasi)</div>
-  <div class="k">Docs</div><div><a href="${REPO}/blob/main/TUTORIAL.md">TUTORIAL</a> · <a href="${REPO}/blob/main/EXPLAINER.md">EXPLAINER</a> · <a href="${REPO}/blob/main/SECURITY-AUDIT.md">SECURITY-AUDIT</a></div>
-</div>
+<h2>Join</h2>
+<div class="kv"><ol>
+<li><b>Prepare</b><span>A RESET wallet and about 0.15 TNK for network fees. Minimum deposit is 0.001 RESET.</span></li>
+<li><b>Clone the contract</b><span><code>git clone ${REPO}</code> — verify the md5 hashes against the README.</span></li>
+<li><b>Register</b><span><code>member_register</code>, then prove ownership with <code>sign_challenge</code> via your agent.</span></li>
+<li><b>Deposit</b><span>Send RESET to the pool wallet and report the transfer reference. Credited once, verifiable on-chain.</span></li>
+<li><b>Monitor</b><span>Read your numbers here or from your own peer — every member holds the ledger.</span></li>
+</ol></div>
 
-<h2>Auditable</h2>
-<div class="sub">Kontrak adversarially tested — 64 checks · settlement math 17 tests + 500-case property sweep · semua member pegang salinan ledger · <a href="${REPO}">github.com/Juujuarch/reset-pool</a></div>
-
-${d.errors.length ? `<div class="err">${d.errors.map(e => '· ' + e).join('<br>')}</div>` : ''}
-<footer>poolreset.bond · updated ${d.ts} · auto-refresh 60s · pool independen, bukan site resmi RESET · <a href="${REPO}">source</a></footer>
-<script>setTimeout(()=>location.reload(),60000)</script>
+<footer>
+  <div>Pool wallet <code>${POOL_WALLET ? short(POOL_WALLET, 12) : 'TBD'}</code> · Fee receiver <code>${short(FEE_WALLET, 12)}</code></div>
+  <div>Independent pool · not affiliated with Trac Systems · <a href="${REPO}">source</a></div>
+</footer>
 </body></html>`;
 }
 
@@ -252,4 +213,4 @@ const server = http.createServer(async (req, res) => {
   res.end(page(d));
 });
 
-server.listen(PORT, HOST, () => console.log(`[pool-dash] TRAC-glossy dashboard on http://${HOST}:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`[pool-dash] on http://${HOST}:${PORT}`));
