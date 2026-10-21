@@ -81,7 +81,8 @@ await accept('operator inits pool', () =>
 const cfg = await BASE.get('config');
 assert.equal(cfg.operator, OP);
 assert.equal(cfg.feeReceiver, R1);
-assert.equal(cfg.feeMode, 'tiered-v6-immutable');
+assert.equal(cfg.feeMode, 'flat-v5-immutable');
+assert.equal(cfg.feeBps, 400);
 ok('config records both receivers and the split');
 
 await reject('second poolInit refused', () =>

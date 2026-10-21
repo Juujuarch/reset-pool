@@ -1,34 +1,15 @@
-import { Contract } from 'trac-peer'
-import { computeSplit, MEMBER_FEE_TIERS } from './split.mjs'
+// RESET mining pool ledger contract.
+//
+// Immutable: every parameter is written once at pool_init and there is no
+// operation anywhere that changes it afterwards.
+//
+// The contract is the accounting layer. The operator runs a claim loop
+// against the RESET gateway; this ledger records who deposited how much,
+// what each round settled, and what each member is owed — replicated to
+// every member peer so the numbers are auditable by all.
 
-// RESET Mining Pool ledger contract — v6 "tiered + immutable".
-//
-// Design rules honored here (from the intercom template):
-// - No try-catch, no throws, no randomness, no Date.now(), no I/O.
-//   Anything time-like arrives inside the tx payload (operator-supplied).
-// - All amounts are integer base units as decimal strings (RESET: 8 dp).
-// - All state writes (this.put) happen at the end of each function.
-// - Operator-only functions check this.address against config.operator.
-//
-// v5 immutability: the pool's economic parameters are fixed at pool_init and
-// there is NO admin setter anywhere in this contract. Specifically:
-//   * minDeposit, minPayout, feeReceiver, stakerShareBps and
-//     minStakerPrincipal are written once and never changed again.
-//   * there is no op that moves principal or member earnings.
-//   * fee_sweep can only ever pay the single configured feeReceiver, and only
-//     up to what that round actually accrued.
-//   * dust_sweep can only ever move the integer-division remainder that no
-//     member was credited with.
-// The operator can therefore be audited but not silently re-parameterised:
-// changing any of these requires a contract upgrade, which every peer must
-// apply together (state diverges otherwise).
-//
-// Money flow: members register a RESET address -> operator credits verified
-// deposits -> operator snapshots principals per round -> operator settles a
-// round payout, split pro-rata minus the member's tier fee (fee accrues to the single
-// feeReceiver, swept separately) -> members request payouts of earnings and
-// exits of principal, operator marks them paid after the real RESET transfer
-// happens off-contract.
+import { Contract } from 'trac-peer';
+import { computeSplit, MEMBER_FEE_TIERS } from './split.mjs';
 
 const ADDR = { type: 'string', pattern: /^[0-9a-f]{64}$/ };
 const AMOUNT = { type: 'string', pattern: /^[0-9]{1,24}$/ };
@@ -39,9 +20,6 @@ class PoolContract extends Contract {
   constructor(protocol, options = {}) {
     super(protocol, options);
 
-    // feeReceiver is optional at init: the operator may start the pool before
-    // the vault exists. Once set (setFeeReceiver, allowed exactly once) it is
-    // frozen forever. Until then fees accrue but cannot be swept.
     this.addSchema('poolInit', { value: { $$strict: true, $$type: 'object',
       poolWallet: ADDR, feeReceiver: ADDR } });
     this.addSchema('setFeeReceiver', { value: { $$strict: true, $$type: 'object',
@@ -52,6 +30,7 @@ class PoolContract extends Contract {
       member: ADDR, enabled: { type: 'boolean' } } });
     this.addSchema('depositCredit', { value: { $$strict: true, $$type: 'object',
       member: ADDR, amount: AMOUNT, txRef: TXREF } });
+
     this.addSchema('roundSnapshot', { value: { $$strict: true, $$type: 'object',
       round: ROUND } });
     this.addSchema('roundSettle', { value: { $$strict: true, $$type: 'object',
@@ -78,32 +57,40 @@ class PoolContract extends Contract {
     this.addFunction('poolRead');
   }
 
+  // ─── read helpers ────────────────────────────────────────────────────────
+
   async cfg() { return await this.get('config'); }
   async totals() {
-    const t = await this.get('totals');
-    if (t) return t;
-    return { principal: '0', earningsOwed: '0', feesAccrued: '0', feesSwept: '0', dust: '0' };
+    return await this.get('totals') ||
+      { principal: '0', earningsOwed: '0', feesAccrued: '0', feesSwept: '0', dust: '0' };
   }
-  async counters() { return (await this.get('counters')) || { payout: 0, exit: 0 }; }
+  async counters() { return await this.get('counters') || { payout: 0, exit: 0 }; }
   isOp(config) { return config && this.address === config.operator; }
-  amt(x) { const b = this.protocol.safeBigInt(x); this.assert(b !== null && b > 0n, new Error('bad amount')); return b; }
+  amt(x) {
+    const b = this.protocol.safeBigInt(x);
+    this.assert(b !== null && b > 0n, new Error('bad amount'));
+    return b;
+  }
 
-  // One-shot init. Every economic parameter is frozen here.
+  // ─── init (one-shot) ─────────────────────────────────────────────────────
+
+  // pool_init must be sent by the operator in the same transaction that
+  // deploys the contract, or an attacker can front-run it and become
+  // the operator.
   async poolInit() {
     if (await this.get('config')) return false;
-    // A fee receiver that is also the pool wallet would mix member principal
-    // with operator fees.
     if (this.value.feeReceiver === this.value.poolWallet) return false;
     const config = {
       operator: this.address,
       poolWallet: this.value.poolWallet,
-      feeMode: 'tiered-v6-immutable',
-      feeReceiver: this.value.feeReceiver, // may be null until setFeeReceiver
+      feeReceiver: this.value.feeReceiver,
+      feeBps: 400,                     // 4% of earnings, frozen
+      minDeposit: '100000',            // 0.001 RESET, frozen
+      minPayout: '1000000',            // 0.01 RESET, frozen
+      stakerShareBps: 5000,            // 50% of fees to stakers, frozen
+      minStakerPrincipal: '50000000',  // 0.5 RESET, frozen
+      feeMode: 'flat-v5-immutable',
       feeReceiverLocked: this.value.feeReceiver !== null,
-      minDeposit: '100000',               // 0.001 RESET, frozen
-      minPayout: '1000000',               // 0.01 RESET, frozen
-      stakerShareBps: 5000,               // frozen
-      minStakerPrincipal: '50000000'      // 0.5 RESET, frozen
     };
     await this.put('config', config);
     await this.put('members', []);
@@ -111,8 +98,8 @@ class PoolContract extends Contract {
     await this.put('counters', await this.counters());
   }
 
-  // The fee receiver may be set exactly once, and only while it is still empty.
-  // After that the field is permanently locked: there is no op to change it.
+  // The fee receiver can be set exactly once, and only while still empty.
+  // After that it is locked: there is no path to change it.
   async setFeeReceiver() {
     const config = await this.cfg();
     if (!this.isOp(config)) return false;
@@ -122,6 +109,8 @@ class PoolContract extends Contract {
     config.feeReceiverLocked = true;
     await this.put('config', config);
   }
+
+  // ─── member ──────────────────────────────────────────────────────────────
 
   async memberRegister() {
     const config = await this.cfg();
@@ -133,6 +122,26 @@ class PoolContract extends Contract {
     members.push(member);
     await this.put('member/' + member, { peer: this.address, principal: '0', earnings: '0', exiting: '0', staker: false });
     await this.put('members', members);
+  }
+
+  // ─── operator: deposit ───────────────────────────────────────────────────
+
+  async depositCredit() {
+    const config = await this.cfg();
+    if (!this.isOp(config)) return false;
+    const { member, amount, txRef } = this.value;
+    if (await this.get('deposit/' + txRef)) return false;
+    const rec = await this.get('member/' + member);
+    if (!rec) return false;
+    if (this.protocol.safeBigInt(rec.exiting) > 0n) return false;
+    const amt = this.amt(amount);
+    if (amt < this.protocol.safeBigInt(config.minDeposit)) return false;
+    const totals = await this.totals();
+    rec.principal = (this.protocol.safeBigInt(rec.principal) + amt).toString();
+    totals.principal = (this.protocol.safeBigInt(totals.principal) + amt).toString();
+    await this.put('deposit/' + txRef, { member, amount });
+    await this.put('member/' + member, rec);
+    await this.put('totals', totals);
   }
 
   // Operator-only whitelist: mark/unmark a registered member as staker.
@@ -147,25 +156,7 @@ class PoolContract extends Contract {
     await this.put('member/' + this.value.member, rec);
   }
 
-  async depositCredit() {
-    const config = await this.cfg();
-    if (!this.isOp(config)) return false;
-    const { member, amount, txRef } = this.value;
-    if (await this.get('deposit/' + txRef)) return false; // idempotent per transfer
-    const rec = await this.get('member/' + member);
-    if (!rec) return false;
-    // A member with a pending exit cannot add principal: the snapshot would
-    // count new money while the old money is still queued out.
-    if (this.protocol.safeBigInt(rec.exiting) > 0n) return false;
-    const amt = this.amt(amount);
-    if (amt < this.protocol.safeBigInt(config.minDeposit)) return false;
-    const totals = await this.totals();
-    rec.principal = (this.protocol.safeBigInt(rec.principal) + amt).toString();
-    totals.principal = (this.protocol.safeBigInt(totals.principal) + amt).toString();
-    await this.put('deposit/' + txRef, { member, amount });
-    await this.put('member/' + member, rec);
-    await this.put('totals', totals);
-  }
+  // ─── operator: round lifecycle ───────────────────────────────────────────
 
   async roundSnapshot() {
     const config = await this.cfg();
@@ -224,14 +215,14 @@ class PoolContract extends Contract {
     await this.put(key, round);
   }
 
+  // ─── member: payouts and exits ───────────────────────────────────────────
+
   async payoutRequest() {
     const { member, amount } = this.value;
     const rec = await this.get('member/' + member);
     if (!rec || rec.peer !== this.address) return false;
     const config = await this.cfg();
     const amt = this.amt(amount);
-    // Earnings below minPayout keep accumulating in the ledger: paying them
-    // out would cost more in TNK transfer fees than they are worth.
     if (config && amt < this.protocol.safeBigInt(config.minPayout)) return false;
     if (this.protocol.safeBigInt(rec.earnings) < amt) return false;
     const counters = await this.counters();
@@ -280,8 +271,6 @@ class PoolContract extends Contract {
     if (!rec || rec.peer !== this.address) return false;
     const config = await this.cfg();
     const amt = this.amt(amount);
-    // Same floor as a deposit: without it a member can create unlimited
-    // one-unit exit records and bloat the replicated state.
     if (config && amt < this.protocol.safeBigInt(config.minDeposit)) return false;
     if (this.protocol.safeBigInt(rec.principal) < amt) return false;
     const counters = await this.counters();
@@ -312,10 +301,8 @@ class PoolContract extends Contract {
     await this.put('member/' + ex.member, rec);
   }
 
-  // Sweep accrued fees to the ONE configured feeReceiver. There is no receiver
-  // argument: the destination cannot be chosen by the caller, so a
-  // compromised operator key cannot redirect fees elsewhere without changing
-  // the config, which has no setter.
+  // ─── operator: fee and dust sweeps ───────────────────────────────────────
+
   async feeSweep() {
     const config = await this.cfg();
     if (!this.isOp(config)) return false;
@@ -330,8 +317,6 @@ class PoolContract extends Contract {
     await this.put('totals', totals);
   }
 
-  // Only the rounding remainder that no member was ever credited with.
-  // Fees have their own counters and are not touchable here.
   async dustSweep() {
     const config = await this.cfg();
     if (!this.isOp(config)) return false;
@@ -345,9 +330,8 @@ class PoolContract extends Contract {
     await this.put('totals', totals);
   }
 
-  // Read-only solvency check: does the pool wallet actually hold what the
-  // ledger says it owes? `onchain` is the balance the operator reads from the
-  // gateway; this function only compares and reports, it never moves funds.
+  // ─── read-only: solvency ─────────────────────────────────────────────────
+
   async solvencyRead() {
     const totals = await this.totals();
     const owedPrincipal = this.protocol.safeBigInt(totals.principal);
